@@ -10,6 +10,10 @@ venv/
 .coverage
 htmlcov/
 
+# YOLO training artifacts
+backend/training_data/
+backend/models/
+
 # Node
 node_modules/
 dist/

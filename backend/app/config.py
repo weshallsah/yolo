@@ -26,6 +26,7 @@ class Settings:
     shopping_country: str = "us"
     shopping_language: str = "en"
     shopping_currency: str = "USD"
+    training_data_dir: str = "training_data"
 
 
 @lru_cache
@@ -44,6 +45,7 @@ def get_settings() -> Settings:
     shopping_country = os.environ.get("APP_SHOPPING_COUNTRY", "us")
     shopping_language = os.environ.get("APP_SHOPPING_LANGUAGE", "en")
     shopping_currency = os.environ.get("APP_SHOPPING_CURRENCY", "USD")
+    training_data_dir = os.environ.get("APP_TRAINING_DATA_DIR", "training_data")
 
     cors_origins = [
         "http://localhost:5173",
@@ -65,4 +67,5 @@ def get_settings() -> Settings:
         shopping_country=shopping_country,
         shopping_language=shopping_language,
         shopping_currency=shopping_currency,
+        training_data_dir=training_data_dir,
     )

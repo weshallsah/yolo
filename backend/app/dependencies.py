@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from app.config import get_settings
 from app.db.base import get_session_factory
@@ -11,6 +12,8 @@ from app.repositories.pgvector_repository import PgVectorProductRepository
 from app.search.base import ProductSearcher
 from app.search.serpapi_shopping import SerpApiShoppingSearcher
 from app.services.identify_service import IdentifyService
+from app.training.base import TrainingDataRecorder
+from app.training.dataset_recorder import YoloDatasetRecorder
 from app.vision.base import ReverseImageSearcher
 from app.vision.serpapi_lens import SerpApiLensSearcher
 
@@ -56,6 +59,12 @@ def get_product_searcher() -> ProductSearcher:
     )
 
 
+@lru_cache
+def get_training_recorder() -> TrainingDataRecorder:
+    settings = get_settings()
+    return YoloDatasetRecorder(root=Path(settings.training_data_dir))
+
+
 def get_identify_service() -> IdentifyService:
     settings = get_settings()
     return IdentifyService(
@@ -64,5 +73,6 @@ def get_identify_service() -> IdentifyService:
         detector=get_detector(),
         reverse_search=get_reverse_image_searcher(),
         product_search=get_product_searcher(),
+        training_recorder=get_training_recorder(),
         yolo_trust_confidence=settings.yolo_trust_confidence,
     )

@@ -4,7 +4,7 @@ import ErrorState from './components/ErrorState'
 import LoadingState from './components/LoadingState'
 import ResultCard from './components/ResultCard'
 import UploadZone from './components/UploadZone'
-import { identifyImage } from './lib/api'
+import { identifyImage, identifyImageManual } from './lib/api'
 import type { IdentifyResult } from './lib/types'
 
 type Stage = 'idle' | 'camera' | 'analyzing' | 'result' | 'error'
@@ -14,6 +14,7 @@ function App() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [result, setResult] = useState<IdentifyResult | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
   const objectUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -27,6 +28,7 @@ function App() {
     const url = URL.createObjectURL(file)
     objectUrlRef.current = url
     setImageUrl(url)
+    setPendingFile(file)
     setStage('analyzing')
 
     try {
@@ -39,9 +41,24 @@ function App() {
     }
   }
 
+  async function handleManualIdentify(label: string) {
+    if (!pendingFile) return
+    setStage('analyzing')
+
+    try {
+      const data = await identifyImageManual(pendingFile, label)
+      setResult(data)
+      setStage('result')
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong.')
+      setStage('error')
+    }
+  }
+
   function handleReset() {
     setResult(null)
     setErrorMessage(null)
+    setPendingFile(null)
     setStage('idle')
   }
 
@@ -70,7 +87,7 @@ function App() {
             <ResultCard result={result} imageUrl={imageUrl} onReset={handleReset} />
           )}
           {stage === 'error' && errorMessage && (
-            <ErrorState message={errorMessage} onRetry={handleReset} />
+            <ErrorState message={errorMessage} onRetry={handleReset} onManualIdentify={handleManualIdentify} />
           )}
         </main>
 

@@ -29,6 +29,8 @@ services:
       - "9000:9000"
     volumes:
       - hf_cache:/root/.cache/huggingface
+      - training_data:/app/training_data
+      - trained_models:/app/models
     depends_on:
       db:
         condition: service_healthy
@@ -64,3 +66,5 @@ volumes:
   db_data:
   hf_cache:
   pgadmin_data:
+  training_data:
+  trained_models:

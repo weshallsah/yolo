@@ -37,3 +37,11 @@ def broadened_queries(title: str) -> list[str]:
         add(significant[-1])
 
     return queries
+
+
+def most_generic_term(title: str) -> str:
+    """Returns the single most generic term derivable from a specific title — its
+    plain object category (e.g. "Helmet"), for use as a YOLO training class label.
+    """
+    queries = broadened_queries(title)
+    return queries[-1] if queries else title

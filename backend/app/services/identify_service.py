@@ -6,8 +6,9 @@ from app.repositories.base import ProductCatalogRepository
 from app.schemas import IdentifyResult, PriceListing, Trust
 from app.search.base import ProductSearcher, ProductSearchError, ShoppingListing
 from app.search.pricing import average_price, best_value
-from app.search.query_broadening import broadened_queries
+from app.search.query_broadening import broadened_queries, most_generic_term
 from app.services.exceptions import IdentificationError
+from app.training.base import TrainingDataRecorder
 from app.vision.base import ReverseImageSearcher, ReverseImageSearchError
 
 
@@ -63,6 +64,7 @@ class IdentifyService:
         detector: ObjectDetector,
         reverse_search: ReverseImageSearcher,
         product_search: ProductSearcher,
+        training_recorder: TrainingDataRecorder,
         yolo_trust_confidence: float = 0.6,
     ) -> None:
         self._embedder = embedder
@@ -70,7 +72,36 @@ class IdentifyService:
         self._detector = detector
         self._reverse_search = reverse_search
         self._product_search = product_search
+        self._training_recorder = training_recorder
         self._yolo_trust_confidence = yolo_trust_confidence
+
+    def identify_manual(self, image_bytes: bytes, label: str) -> IdentifyResult:
+        """Identifies an object from a user-typed label, for when YOLO and Google Lens
+        both fail to recognize it. Feeds the same catalog/training/pricing pipeline as
+        an automatic match, so a manually-named object is never a dead end again.
+        """
+        embedding = self._embedder.embed(image_bytes)
+        title = label.title()
+        category = title
+        description = f"Identified manually by the user as '{label}'."
+        confidence = 0.5
+        source = "manual entry"
+
+        self._catalog.add(
+            embedding=embedding,
+            title=title,
+            category=category,
+            description=description,
+            trust=_trust_from_confidence(confidence, source),
+        )
+        self._training_recorder.record(image_bytes, most_generic_term(title))
+        return self._build_result(
+            title=title,
+            category=category,
+            description=description,
+            confidence=confidence,
+            source=source,
+        )
 
     def identify(self, image_bytes: bytes) -> IdentifyResult:
         embedding = self._embedder.embed(image_bytes)
@@ -128,6 +159,7 @@ class IdentifyService:
             description=description,
             trust=_trust_from_confidence(confidence, source),
         )
+        self._training_recorder.record(image_bytes, most_generic_term(title))
         return self._build_result(
             title=title,
             category=category,
