@@ -97,6 +97,12 @@ def main() -> None:
         help="Classes with fewer images than this can't be split into train/val and are dropped",
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--max-images",
+        type=int,
+        default=None,
+        help="Cap the total number of images used (randomly sampled across classes) before splitting",
+    )
     args = parser.parse_args()
 
     print("Loading image path index...")
@@ -115,6 +121,15 @@ def main() -> None:
             missing_files += 1
             continue
         by_class.setdefault(class_name, []).append(rel_path)
+
+    if args.max_images is not None:
+        all_pairs = [(name, path) for name, paths in by_class.items() for path in paths]
+        random.Random(args.seed).shuffle(all_pairs)
+        all_pairs = all_pairs[: args.max_images]
+        by_class = {}
+        for name, path in all_pairs:
+            by_class.setdefault(name, []).append(path)
+        print(f"Capped to {len(all_pairs):,} images (--max-images {args.max_images})")
 
     dropped = {name: paths for name, paths in by_class.items() if len(paths) < args.min_images_per_class}
     by_class = {name: paths for name, paths in by_class.items() if len(paths) >= args.min_images_per_class}

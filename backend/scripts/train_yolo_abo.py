@@ -29,6 +29,13 @@ def main() -> None:
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--device", default=None, help="e.g. 0 for first GPU, cpu for CPU (default: auto)")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="DataLoader worker processes. Use 0 on environments with restricted shared memory (e.g. Kaggle), "
+        "where workers>0 can deadlock.",
+    )
     args = parser.parse_args()
 
     if not DATA_YAML_PATH.exists():
@@ -41,6 +48,7 @@ def main() -> None:
         imgsz=args.imgsz,
         batch=args.batch,
         device=args.device,
+        workers=args.workers,
         project=str(MODELS_DIR),
         name="abo_yolo",
         exist_ok=True,

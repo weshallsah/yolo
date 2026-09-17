@@ -51,8 +51,15 @@ def main() -> None:
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--device", default=None, help="e.g. 0 for first GPU, cpu for CPU (default: auto)")
+    parser.add_argument("--workers", type=int, default=8, help="DataLoader workers; use 0 on Kaggle to avoid shm deadlocks")
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument("--min-images-per-class", type=int, default=2)
+    parser.add_argument(
+        "--max-images",
+        type=int,
+        default=None,
+        help="Cap the total number of images used (randomly sampled across classes) before splitting",
+    )
     args = parser.parse_args()
 
     _extract(LISTINGS_TAR, LISTINGS_DIR, "abo-listings", args.force)
@@ -61,16 +68,17 @@ def main() -> None:
     if DATA_YAML_PATH.exists() and not args.force:
         print(f"[skip] dataset already built at {DATA_YAML_PATH}")
     else:
-        _run(
-            [
-                sys.executable,
-                str(SCRIPTS_DIR / "prepare_abo_dataset.py"),
-                "--val-fraction",
-                str(args.val_fraction),
-                "--min-images-per-class",
-                str(args.min_images_per_class),
-            ]
-        )
+        prepare_cmd = [
+            sys.executable,
+            str(SCRIPTS_DIR / "prepare_abo_dataset.py"),
+            "--val-fraction",
+            str(args.val_fraction),
+            "--min-images-per-class",
+            str(args.min_images_per_class),
+        ]
+        if args.max_images is not None:
+            prepare_cmd += ["--max-images", str(args.max_images)]
+        _run(prepare_cmd)
 
     train_cmd = [
         sys.executable,
@@ -83,6 +91,8 @@ def main() -> None:
         str(args.imgsz),
         "--batch",
         str(args.batch),
+        "--workers",
+        str(args.workers),
     ]
     if args.device is not None:
         train_cmd += ["--device", args.device]
