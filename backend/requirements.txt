@@ -3,3 +3,4 @@ uvicorn[standard]==0.53.0
 python-multipart==0.0.32
 ultralytics==8.4.150
 pillow==12.3.0
+pyyaml==6.0.3
