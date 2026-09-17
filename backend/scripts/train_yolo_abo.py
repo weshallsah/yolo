@@ -13,7 +13,13 @@ def main() -> None:
     parser.add_argument("--weights", default="yolov8n.pt", help="Base checkpoint to start training from")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument(
+        "--batch",
+        type=float,
+        default=16,
+        help="Fixed batch size (integer >= 1), a fraction between 0 and 1 to set AutoBatch's "
+        "target GPU-memory utilization (e.g. 0.85 for ~85%%), or -1 for AutoBatch's default ~60%% target",
+    )
     parser.add_argument("--device", default=None, help="e.g. 0 for first GPU, cpu for CPU (default: auto)")
     parser.add_argument(
         "--workers",
@@ -37,13 +43,14 @@ def main() -> None:
         raise SystemExit(f"Missing {DATA_YAML_PATH}. Run scripts/prepare_abo_dataset.py first.")
 
     cache = {"ram": True, "disk": "disk", "none": False}[args.cache]
+    batch = int(args.batch) if args.batch >= 1 else args.batch
 
     model = YOLO(args.weights)
     model.train(
         data=str(DATA_YAML_PATH),
         epochs=args.epochs,
         imgsz=args.imgsz,
-        batch=args.batch,
+        batch=batch,
         device=args.device,
         workers=args.workers,
         patience=args.patience,
