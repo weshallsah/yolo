@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+import io
 
-from app.dependencies import get_identify_service
-from app.schemas import IdentifyResult
-from app.services.exceptions import IdentificationError
-from app.services.identify_service import IdentifyService
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from PIL import Image
 
-router = APIRouter(prefix="/api", tags=["identify"])
+from app.dependencies import get_detector
+from app.detection.base import ObjectDetector
+from app.schemas import DetectionResponse
+
+router = APIRouter(prefix="/api", tags=["detect"])
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
@@ -21,31 +23,18 @@ async def _read_image_bytes(image: UploadFile) -> bytes:
     return image_bytes
 
 
-@router.post("/identify", response_model=IdentifyResult)
-async def identify(
+@router.post("/detect", response_model=DetectionResponse)
+async def detect(
     image: UploadFile,
-    service: IdentifyService = Depends(get_identify_service),
-) -> IdentifyResult:
+    detector: ObjectDetector = Depends(get_detector),
+) -> DetectionResponse:
     image_bytes = await _read_image_bytes(image)
 
     try:
-        return service.identify(image_bytes)
-    except IdentificationError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        width, height = Image.open(io.BytesIO(image_bytes)).size
+    except Exception as error:
+        raise HTTPException(status_code=400, detail="Could not read this image.") from error
 
+    detections = detector.detect(image_bytes)
 
-@router.post("/identify/manual", response_model=IdentifyResult)
-async def identify_manual(
-    image: UploadFile,
-    label: str = Form(...),
-    service: IdentifyService = Depends(get_identify_service),
-) -> IdentifyResult:
-    image_bytes = await _read_image_bytes(image)
-
-    if not label.strip():
-        raise HTTPException(status_code=400, detail="Please tell us what this item is.")
-
-    try:
-        return service.identify_manual(image_bytes, label.strip())
-    except IdentificationError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+    return DetectionResponse(detections=detections, image_width=width, image_height=height)

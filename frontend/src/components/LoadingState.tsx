@@ -10,7 +10,7 @@ export default function LoadingState({ imageUrl }: { imageUrl: string }) {
         <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-500 [animation-delay:-0.3s]" />
         <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-500 [animation-delay:-0.15s]" />
         <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-500" />
-        <span className="ml-2 text-sm font-medium">Identifying your item…</span>
+        <span className="ml-2 text-sm font-medium">Detecting objects…</span>
       </div>
     </div>
   )

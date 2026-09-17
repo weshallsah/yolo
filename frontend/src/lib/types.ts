@@ -1,26 +1,18 @@
-export type TrustLevel = 'verified' | 'caution' | 'unverified'
-
-export interface PriceListing {
-  source: string
-  price: number
-  currency: string
-  condition: string
-  url: string
-  thumbnail?: string | null
-  isBestValue?: boolean
+export interface BoundingBox {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
 }
 
-export interface IdentifyResult {
-  id: string
-  title: string
-  category: string
-  description: string
+export interface Detection {
+  label: string
   confidence: number
-  trust: {
-    level: TrustLevel
-    reason: string
-  }
-  priceListings: PriceListing[]
-  averagePrice: number
-  recommendation: string
+  box: BoundingBox
+}
+
+export interface DetectionResponse {
+  detections: Detection[]
+  imageWidth: number
+  imageHeight: number
 }

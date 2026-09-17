@@ -4,7 +4,7 @@ from PIL import Image
 from ultralytics import YOLO
 
 from app.detection.base import ObjectDetector
-from app.schemas import Detection
+from app.schemas import BoundingBox, Detection
 
 
 class YoloObjectDetector(ObjectDetector):
@@ -19,7 +19,16 @@ class YoloObjectDetector(ObjectDetector):
         results = self._model.predict(image, verbose=False)
 
         detections = [
-            Detection(label=result.names[int(box.cls[0])], confidence=float(box.conf[0]))
+            Detection(
+                label=result.names[int(box.cls[0])],
+                confidence=float(box.conf[0]),
+                box=BoundingBox(
+                    x1=float(box.xyxy[0][0]),
+                    y1=float(box.xyxy[0][1]),
+                    x2=float(box.xyxy[0][2]),
+                    y2=float(box.xyxy[0][3]),
+                ),
+            )
             for result in results
             for box in result.boxes
             if float(box.conf[0]) >= self._confidence_threshold

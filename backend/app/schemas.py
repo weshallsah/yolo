@@ -1,9 +1,5 @@
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
-
-TrustLevel = Literal["verified", "caution", "unverified"]
 
 
 class CamelModel(BaseModel):
@@ -12,37 +8,24 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class Detection(BaseModel):
-    """Raw output of an object detector for a single detected object."""
+class BoundingBox(CamelModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class Detection(CamelModel):
+    """A single object detected in the image by the YOLO model."""
 
     label: str
     confidence: float
+    box: BoundingBox
 
 
-class PriceListing(CamelModel):
-    source: str
-    price: float
-    currency: str
-    condition: str
-    url: str
-    thumbnail: str | None = None
-    is_best_value: bool = False
+class DetectionResponse(CamelModel):
+    """API response returned to the frontend for one detection request."""
 
-
-class Trust(BaseModel):
-    level: TrustLevel
-    reason: str
-
-
-class IdentifyResult(CamelModel):
-    """API response returned to the frontend for one identified product."""
-
-    id: str
-    title: str
-    category: str
-    description: str
-    confidence: float
-    trust: Trust
-    price_listings: list[PriceListing]
-    average_price: float
-    recommendation: str
+    detections: list[Detection]
+    image_width: int
+    image_height: int

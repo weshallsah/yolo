@@ -1,20 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import CameraCapture from './components/CameraCapture'
+import DetectionResult from './components/DetectionResult'
 import ErrorState from './components/ErrorState'
 import LoadingState from './components/LoadingState'
-import ResultCard from './components/ResultCard'
 import UploadZone from './components/UploadZone'
-import { identifyImage, identifyImageManual } from './lib/api'
-import type { IdentifyResult } from './lib/types'
+import { detectImage } from './lib/api'
+import type { DetectionResponse } from './lib/types'
 
 type Stage = 'idle' | 'camera' | 'analyzing' | 'result' | 'error'
 
 function App() {
   const [stage, setStage] = useState<Stage>('idle')
   const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [result, setResult] = useState<IdentifyResult | null>(null)
+  const [result, setResult] = useState<DetectionResponse | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [pendingFile, setPendingFile] = useState<File | null>(null)
   const objectUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -28,25 +27,10 @@ function App() {
     const url = URL.createObjectURL(file)
     objectUrlRef.current = url
     setImageUrl(url)
-    setPendingFile(file)
     setStage('analyzing')
 
     try {
-      const data = await identifyImage(file)
-      setResult(data)
-      setStage('result')
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong.')
-      setStage('error')
-    }
-  }
-
-  async function handleManualIdentify(label: string) {
-    if (!pendingFile) return
-    setStage('analyzing')
-
-    try {
-      const data = await identifyImageManual(pendingFile, label)
+      const data = await detectImage(file)
       setResult(data)
       setStage('result')
     } catch (err) {
@@ -58,7 +42,6 @@ function App() {
   function handleReset() {
     setResult(null)
     setErrorMessage(null)
-    setPendingFile(null)
     setStage('idle')
   }
 
@@ -67,11 +50,10 @@ function App() {
       <div className="mx-auto flex min-h-svh w-full max-w-2xl flex-col px-4 py-10 sm:py-16">
         <header className="mb-8 text-center">
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 sm:text-3xl">
-            What is this, and is it worth it?
+            Object Detector
           </h1>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            Snap or upload a photo to identify a product, compare prices, and check if it's a fair,
-            trustworthy buy.
+            Snap or upload a photo and see exactly what the YOLO model detects.
           </p>
         </header>
 
@@ -84,15 +66,15 @@ function App() {
           )}
           {stage === 'analyzing' && imageUrl && <LoadingState imageUrl={imageUrl} />}
           {stage === 'result' && result && imageUrl && (
-            <ResultCard result={result} imageUrl={imageUrl} onReset={handleReset} />
+            <DetectionResult result={result} imageUrl={imageUrl} onReset={handleReset} />
           )}
           {stage === 'error' && errorMessage && (
-            <ErrorState message={errorMessage} onRetry={handleReset} onManualIdentify={handleManualIdentify} />
+            <ErrorState message={errorMessage} onRetry={handleReset} />
           )}
         </main>
 
         <footer className="mt-8 text-center text-xs text-slate-400">
-          Prices are pulled live from real marketplace listings and may change between searches.
+          Detections are produced directly by the YOLO model running on the backend.
         </footer>
       </div>
     </div>

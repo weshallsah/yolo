@@ -12,8 +12,8 @@ RUN pip install --no-cache-dir torch==2.14.0 torchvision==0.29.0 --index-url htt
     && pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY scripts ./scripts
 COPY yolo11n.pt .
+COPY models ./models
 
 EXPOSE 9000
 

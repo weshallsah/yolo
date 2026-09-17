@@ -1,55 +1,14 @@
 services:
-  db:
-    image: pgvector/pgvector:pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: productdb
-    ports:
-      - "5432:5432"
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: ./backend
     restart: unless-stopped
     environment:
-      APP_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/productdb
       APP_CORS_ORIGIN: http://localhost:5173
       APP_DETECTION_CONFIDENCE_THRESHOLD: "0.2"
-      APP_SERPAPI_KEY: ${APP_SERPAPI_KEY:?Set APP_SERPAPI_KEY in a .env file or the shell environment}
+      APP_YOLO_WEIGHTS_PATH: models/abo_yolo/weights/best.pt
     ports:
       - "9000:9000"
-    volumes:
-      - hf_cache:/root/.cache/huggingface
-      - training_data:/app/training_data
-      - trained_models:/app/models
-    depends_on:
-      db:
-        condition: service_healthy
-
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
-    ports:
-      - "5050:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
-    depends_on:
-      db:
-        condition: service_healthy
 
   frontend:
     build:
@@ -61,10 +20,3 @@ services:
       - "5173:80"
     depends_on:
       - backend
-
-volumes:
-  db_data:
-  hf_cache:
-  pgadmin_data:
-  training_data:
-  trained_models:
