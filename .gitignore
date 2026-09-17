@@ -13,6 +13,7 @@ htmlcov/
 # YOLO training artifacts
 backend/training_data/
 backend/models/
+backend/train.csv.zip
 
 # Node
 node_modules/
