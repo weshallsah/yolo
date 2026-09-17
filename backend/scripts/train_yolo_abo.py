@@ -1,18 +1,3 @@
-"""Trains a YOLO model on the ABO electronics subset built by prepare_abo_dataset.py.
-
-Every class here is an electronics product_type from ABO (e.g. "TELEVISION", "HEADPHONES")
-labeled with a full-frame box, since ABO has no real bounding-box annotations (see
-prepare_abo_dataset.py for why). This trains a standalone detector over ABO's classes
-rather than fine-tuning the app's existing COCO-based checkpoint, since ABO's classes
-mostly don't overlap with COCO's 80 and there's no need to preserve them here.
-
-Usage:
-    python scripts/train_yolo_abo.py [--weights yolo11n.pt] [--epochs 30] [--imgsz 640]
-
-After training, point APP_YOLO_WEIGHTS_PATH at models/abo_yolo_electronics/weights/best.pt
-to serve it.
-"""
-
 import argparse
 from pathlib import Path
 
@@ -25,7 +10,7 @@ MODELS_DIR = BACKEND_DIR / "models"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--weights", default="yolo11n.pt", help="Base checkpoint to start training from")
+    parser.add_argument("--weights", default="yolov8n.pt", help="Base checkpoint to start training from")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=16)

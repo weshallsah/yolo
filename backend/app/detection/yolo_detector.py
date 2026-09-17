@@ -8,8 +8,6 @@ from app.schemas import BoundingBox, Detection
 
 
 class YoloObjectDetector(ObjectDetector):
-    """Detects objects using an Ultralytics YOLO model."""
-
     def __init__(self, weights_path: str, confidence_threshold: float) -> None:
         self._model = YOLO(weights_path)
         self._confidence_threshold = confidence_threshold

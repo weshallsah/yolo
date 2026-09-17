@@ -5,8 +5,6 @@ from functools import lru_cache
 
 @dataclass(frozen=True)
 class Settings:
-    """Runtime configuration, overridable via environment variables."""
-
     app_name: str = "Object Detection API"
     host: str = "0.0.0.0"
     port: int = 9000
@@ -16,14 +14,14 @@ class Settings:
             "http://127.0.0.1:5173",
         ]
     )
-    yolo_weights_path: str = "yolo11n.pt"
+    yolo_weights_path: str = "yolov8n.pt"
     detection_confidence_threshold: float = 0.2
 
 
 @lru_cache
 def get_settings() -> Settings:
     port = int(os.environ.get("APP_PORT", 9000))
-    weights_path = os.environ.get("APP_YOLO_WEIGHTS_PATH", "yolo11n.pt")
+    weights_path = os.environ.get("APP_YOLO_WEIGHTS_PATH", "yolov8n.pt")
     threshold = float(os.environ.get("APP_DETECTION_CONFIDENCE_THRESHOLD", 0.2))
     extra_origin = os.environ.get("APP_CORS_ORIGIN")
 

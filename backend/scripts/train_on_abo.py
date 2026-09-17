@@ -1,16 +1,5 @@
-"""End-to-end pipeline: download the ABO archives, extract them, build the electronics YOLO
-dataset, and train.
-
-Wraps prepare_abo_dataset.py and train_yolo_abo.py so a single command takes you from
-nothing to a trained checkpoint. Downloads the raw ABO tarballs into training_data/abo/raw/
-if they aren't already there. Safe to re-run: downloads, extraction, and dataset prep are
-all skipped if their output already exists, unless --force is passed.
-
-Usage:
-    python scripts/train_on_abo.py [--force] [--weights yolo11n.pt] [--epochs 30] [--imgsz 640] [--batch 16]
-"""
-
 import argparse
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -62,8 +51,11 @@ def _extract(tar_path: Path, dest_dir: Path, label: str, force: bool) -> None:
         raise SystemExit(f"Missing {tar_path}. Download it into {RAW_DIR} first.")
     print(f"[extract] {tar_path.name} -> {dest_dir}")
     dest_dir.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(tar_path) as tar:
-        tar.extractall(dest_dir)
+    if shutil.which("tar"):
+        subprocess.run(["tar", "-xf", str(tar_path), "-C", str(dest_dir)], check=True)
+    else:
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(dest_dir)
 
 
 def _run(args: list[str]) -> None:
@@ -74,7 +66,7 @@ def _run(args: list[str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--force", action="store_true", help="Re-extract and rebuild the dataset even if present")
-    parser.add_argument("--weights", default="yolo11n.pt")
+    parser.add_argument("--weights", default="yolov8n.pt")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=16)

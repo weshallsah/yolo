@@ -1,23 +1,3 @@
-"""Builds a YOLO-format dataset from the Amazon Berkeley Objects (ABO) catalog.
-
-ABO ships product photos and rich metadata (see abo-listings.tar) but no bounding-box
-annotations — it's a retrieval/classification dataset, not a detection one. Like
-app/training/dataset_recorder.py does for the app's own self-collected samples, we treat
-each catalog photo as one object filling the frame (ABO product shots are studio photos
-of a single item) and assign it a full-frame box labeled by its `product_type`
-(e.g. "SHOES", "CHAIR").
-
-Expects these already downloaded and extracted under training_data/abo/:
-  - raw/abo-listings.tar     -> extracted to listings/   (per-item metadata, gzipped JSONL)
-  - raw/abo-images-small.tar -> extracted to images/      (downscaled photos + images.csv.gz)
-
-Only keeps listings whose product_type is in ELECTRONICS_PRODUCT_TYPES below, so the
-resulting dataset/model is scoped to electronics instead of ABO's full ~505-category catalog.
-
-Usage:
-    python scripts/prepare_abo_dataset.py [--val-fraction 0.15] [--min-images-per-class 2]
-"""
-
 import argparse
 import csv
 import gzip
@@ -35,7 +15,7 @@ IMAGES_DIR = ABO_DIR / "images"
 IMAGES_METADATA_CSV = IMAGES_DIR / "images" / "metadata" / "images.csv.gz"
 IMAGES_ROOT = IMAGES_DIR / "images" / "small"
 DATASET_DIR = ABO_DIR / "dataset_electronics"
-FULL_FRAME_BOX = "0.5 0.5 0.98 0.98"  # class_id cx cy w h, normalized, small margin off the edges
+FULL_FRAME_BOX = "0.5 0.5 0.98 0.98"
 
 ELECTRONICS_PRODUCT_TYPES = {
     "ABIS_ELECTRONICS", "AMAZON_TABLET_ACCESSORY", "ANTENNA", "AUDIO_OR_VIDEO", "BATTERY",
@@ -60,7 +40,6 @@ ELECTRONICS_PRODUCT_TYPES = {
 
 
 def _load_image_paths() -> dict[str, str]:
-    """Maps image_id -> path relative to IMAGES_ROOT, from images/metadata/images.csv.gz."""
     if not IMAGES_METADATA_CSV.exists():
         raise SystemExit(
             f"Missing {IMAGES_METADATA_CSV}. Download and extract abo-images-small.tar into "
@@ -74,7 +53,6 @@ def _load_image_paths() -> dict[str, str]:
 
 
 def _load_item_classes() -> dict[str, str]:
-    """Maps main_image_id -> product_type for every listing that has both."""
     if not LISTINGS_DIR.exists():
         raise SystemExit(f"Missing {LISTINGS_DIR}. Download and extract abo-listings.tar first.")
 
