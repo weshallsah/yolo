@@ -23,10 +23,20 @@ def main() -> None:
         "where workers>0 can deadlock.",
     )
     parser.add_argument("--patience", type=int, default=10, help="Stop early once val mAP plateaus for this many epochs")
+    parser.add_argument(
+        "--cache",
+        choices=["ram", "disk", "none"],
+        default="ram",
+        help="Image caching strategy: ram (fastest, falls back to none if there isn't enough RAM), "
+        "disk (caches resized images as .npy files, needs less RAM but more disk space), "
+        "or none (reads from disk every batch)",
+    )
     args = parser.parse_args()
 
     if not DATA_YAML_PATH.exists():
         raise SystemExit(f"Missing {DATA_YAML_PATH}. Run scripts/prepare_abo_dataset.py first.")
+
+    cache = {"ram": True, "disk": "disk", "none": False}[args.cache]
 
     model = YOLO(args.weights)
     model.train(
@@ -37,7 +47,7 @@ def main() -> None:
         device=args.device,
         workers=args.workers,
         patience=args.patience,
-        cache=True,
+        cache=cache,
         project=str(MODELS_DIR),
         name="abo_yolo_electronics",
         exist_ok=True,

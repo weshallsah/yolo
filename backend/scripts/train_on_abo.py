@@ -72,6 +72,14 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--device", default=None, help="e.g. 0 for first GPU, cpu for CPU (default: auto)")
     parser.add_argument("--workers", type=int, default=8, help="DataLoader workers; use 0 on Kaggle to avoid shm deadlocks")
+    parser.add_argument(
+        "--cache",
+        choices=["ram", "disk", "none"],
+        default="ram",
+        help="Image caching strategy: ram (fastest, falls back to none if there isn't enough RAM), "
+        "disk (caches resized images as .npy files, needs less RAM but more disk space), "
+        "or none (reads from disk every batch)",
+    )
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument("--min-images-per-class", type=int, default=2)
     parser.add_argument(
@@ -115,6 +123,8 @@ def main() -> None:
         str(args.batch),
         "--workers",
         str(args.workers),
+        "--cache",
+        args.cache,
     ]
     if args.device is not None:
         train_cmd += ["--device", args.device]
