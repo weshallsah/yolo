@@ -70,10 +70,15 @@ APP_MODEL_TASK=classify
 `result.boxes`, so the default detection path would return an empty list for every image
 rather than failing loudly.
 
-## Running on Kaggle instead
+## Running on Kaggle instead — [`kaggle_train_retail.ipynb`](kaggle_train_retail.ipynb)
 
-Colab's free GPU quota is unpredictable. The same scripts run unchanged in a Kaggle Notebook,
-where the competition mounts at `/kaggle/input` with no token and no download step — add the
-competition as a data source and run `train_on_retail.py`. `prepare_retail_dataset.py`
-searches `/kaggle/input`, `/content/retail_data` and `backend/training_data/retail/raw`, so
-it finds the data either way.
+Often the better route, and not just a fallback. The competition mounts at `/kaggle/input`
+with **no API token, no download step and no 401 to debug** — which is the entire class of
+problem the Colab path has to work around. You also get 30 GPU-hours/week on T4 x2 or P100.
+
+Add the competition under **Add Input**, set Accelerator to GPU and Internet to On, then run
+the notebook. `prepare_retail_dataset.py` searches `/kaggle/input`, `/content/retail_data`
+and `backend/training_data/retail/raw`, so the same scripts work on either host unchanged.
+
+The one Kaggle-specific constraint: only `/kaggle/working` is writable, so the repo is cloned
+there rather than into the home directory.
