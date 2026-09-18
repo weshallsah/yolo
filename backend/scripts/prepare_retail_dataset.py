@@ -11,13 +11,12 @@ from pathlib import Path
 import yaml
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-KAGGLE_INPUT_DIR = Path("/kaggle/input/retail-products-classification")
+KAGGLE_INPUT_DIR = Path("/kaggle/input")
 DEFAULT_CSV_CANDIDATES = [
-    KAGGLE_INPUT_DIR / "train.csv",
+    KAGGLE_INPUT_DIR / "retail-products-classification" / "train.csv",
     BACKEND_DIR / "train.csv",
     BACKEND_DIR / "train.csv.zip",
 ]
-DEFAULT_IMAGES_DIR = KAGGLE_INPUT_DIR / "train"
 DATASET_DIR = BACKEND_DIR / "training_data" / "retail" / "dataset_products"
 FULL_FRAME_BOX = "0.5 0.5 0.98 0.98"
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
@@ -27,9 +26,53 @@ def _find_default_csv() -> Path:
     for candidate in DEFAULT_CSV_CANDIDATES:
         if candidate.exists():
             return candidate
+
+    # Kaggle mounts a competition at /kaggle/input/<slug>, but the slug is not always the
+    # competition's own name: this one arrives under /kaggle/input/competitions/. Search the
+    # mount instead of guessing at its layout.
+    if KAGGLE_INPUT_DIR.is_dir():
+        for name in ("train.csv", "train.csv.zip"):
+            found = sorted(KAGGLE_INPUT_DIR.rglob(name))
+            if found:
+                return found[0]
+
+    searched = ", ".join(str(candidate) for candidate in DEFAULT_CSV_CANDIDATES)
     raise SystemExit(
         "Could not find train.csv. Pass --csv explicitly, or (on Kaggle) add the "
-        f"'retail-products-classification' competition as a data source so it's mounted at {KAGGLE_INPUT_DIR}"
+        "'retail-products-classification' competition as a data source.\n"
+        f"Looked at {searched}, and searched everything under {KAGGLE_INPUT_DIR}."
+    )
+
+
+def _holds_images(directory: Path) -> bool:
+    """True if the directory directly contains at least one image file."""
+    try:
+        return any(
+            entry.suffix.lower() in IMAGE_EXTENSIONS and entry.is_file()
+            for entry in directory.iterdir()
+        )
+    except OSError:
+        return False
+
+
+def _find_default_images_dir(csv_path: Path) -> Path:
+    """Finds the product images belonging to train.csv, looking beside the csv itself.
+
+    Resolved relative to the csv for the same reason _find_default_csv searches rather
+    than hardcodes: the competition's mount point is not known ahead of time.
+    """
+    root = csv_path.parent
+    candidates = [root / "train", root / "images", root / "train_images", root]
+    if root.is_dir():
+        candidates += [entry for entry in sorted(root.iterdir()) if entry.is_dir()]
+
+    for candidate in candidates:
+        if candidate.is_dir() and _holds_images(candidate):
+            return candidate
+
+    raise SystemExit(
+        f"Found {csv_path} but no directory of images beside it. "
+        "Pass --images-dir to point at wherever the images actually live."
     )
 
 
@@ -84,8 +127,9 @@ def main() -> None:
     parser.add_argument(
         "--images-dir",
         type=Path,
-        default=DEFAULT_IMAGES_DIR,
-        help="Directory containing the product images, named <ImgId>.<ext>",
+        default=None,
+        help="Directory containing the product images, named <ImgId>.<ext>; "
+        "auto-detected beside train.csv if omitted",
     )
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument(
@@ -108,9 +152,12 @@ def main() -> None:
     rows = _read_rows(csv_path)
     print(f"  {len(rows):,} rows")
 
-    if not args.images_dir.exists():
+    images_dir = args.images_dir or _find_default_images_dir(csv_path)
+    print(f"Reading images from {images_dir}")
+
+    if not images_dir.exists():
         raise SystemExit(
-            f"Missing images directory {args.images_dir}. On Kaggle, add the "
+            f"Missing images directory {images_dir}. On Kaggle, add the "
             "'retail-products-classification' competition as a data source to this notebook, "
             "or pass --images-dir to point at wherever the images actually live."
         )
@@ -120,7 +167,7 @@ def main() -> None:
     for row in rows:
         image_id = row["ImgId"]
         category = row["categories"]
-        image_path = _resolve_image(args.images_dir, image_id)
+        image_path = _resolve_image(images_dir, image_id)
         if image_path is None:
             missing_files += 1
             continue
@@ -143,7 +190,7 @@ def main() -> None:
     if dropped:
         print(f"{len(dropped)} classes dropped for too few images ({sum(len(p) for p in dropped.values())} images)")
     if missing_files:
-        print(f"{missing_files:,} rows skipped: image file not found in {args.images_dir}")
+        print(f"{missing_files:,} rows skipped: image file not found in {images_dir}")
 
     _reset_dataset_dir()
     class_ids = {name: i for i, name in enumerate(class_names)}
