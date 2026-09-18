@@ -48,6 +48,35 @@ def main() -> None:
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument("--min-images-per-class", type=int, default=2)
     parser.add_argument(
+        "--max-per-class",
+        type=int,
+        default=None,
+        help="Cap images kept per category, so one over-represented class can't dominate",
+    )
+    parser.add_argument(
+        "--min-image-size",
+        type=int,
+        default=None,
+        help="Drop images whose shorter side is below this many pixels (default: 32)",
+    )
+    parser.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip decoding every image to check it isn't corrupt (faster, riskier)",
+    )
+    parser.add_argument(
+        "--keep-duplicates",
+        action="store_true",
+        help="Keep byte-identical duplicate images, which leak across the train/val split",
+    )
+    parser.add_argument(
+        "--prepare-workers",
+        type=int,
+        default=None,
+        help="Threads used to inspect images while preparing the dataset. Distinct from "
+        "--workers, which sets the DataLoader workers used during training",
+    )
+    parser.add_argument(
         "--max-images",
         type=int,
         default=None,
@@ -73,6 +102,16 @@ def main() -> None:
             prepare_cmd += ["--images-dir", args.images_dir]
         if args.max_images is not None:
             prepare_cmd += ["--max-images", str(args.max_images)]
+        if args.max_per_class is not None:
+            prepare_cmd += ["--max-per-class", str(args.max_per_class)]
+        if args.min_image_size is not None:
+            prepare_cmd += ["--min-image-size", str(args.min_image_size)]
+        if args.prepare_workers is not None:
+            prepare_cmd += ["--workers", str(args.prepare_workers)]
+        if args.skip_verify:
+            prepare_cmd += ["--skip-verify"]
+        if args.keep_duplicates:
+            prepare_cmd += ["--keep-duplicates"]
         _run(prepare_cmd)
 
     train_cmd = [
