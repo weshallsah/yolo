@@ -16,12 +16,26 @@ from PIL import Image
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 KAGGLE_INPUT_DIR = Path("/kaggle/input")
+COLAB_DATA_DIR = Path("/content/retail_data")
+RETAIL_DIR = BACKEND_DIR / "training_data" / "retail"
 DEFAULT_CSV_CANDIDATES = [
     KAGGLE_INPUT_DIR / "retail-products-classification" / "train.csv",
+    COLAB_DATA_DIR / "train.csv",
+    RETAIL_DIR / "raw" / "train.csv",
     BACKEND_DIR / "train.csv",
     BACKEND_DIR / "train.csv.zip",
 ]
-DATASET_DIR = BACKEND_DIR / "training_data" / "retail" / "dataset_products"
+# Roots searched when none of the candidates above hit. Kaggle mounts the competition under
+# /kaggle/input/<slug> and the Colab notebook unzips it into /content/retail_data; neither
+# layout is known ahead of time, so these are searched rather than guessed at.
+SEARCH_ROOTS = (KAGGLE_INPUT_DIR, COLAB_DATA_DIR, RETAIL_DIR / "raw")
+# This dataset labels whole images, so "classify" is the layout that matches it: Ultralytics
+# reads <split>/<class>/<image> and needs no boxes. "detect" is the older shim that stamps one
+# full-frame box per image, letting the same labels train a detector the app can already serve.
+DATASET_DIRS = {
+    "classify": RETAIL_DIR / "dataset_products_cls",
+    "detect": RETAIL_DIR / "dataset_products",
+}
 FULL_FRAME_BOX = "0.5 0.5 0.98 0.98"
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 # train.csv headers vary between releases of this dataset, so the columns are matched by
@@ -36,19 +50,23 @@ def _find_default_csv() -> Path:
             return candidate
 
     # Kaggle mounts a competition at /kaggle/input/<slug>, but the slug is not always the
-    # competition's own name: this one arrives under /kaggle/input/competitions/. Search the
-    # mount instead of guessing at its layout.
-    if KAGGLE_INPUT_DIR.is_dir():
+    # competition's own name: this one arrives under /kaggle/input/competitions/. Search each
+    # root instead of guessing at its layout.
+    for root in SEARCH_ROOTS:
+        if not root.is_dir():
+            continue
         for name in ("train.csv", "train.csv.zip"):
-            found = sorted(KAGGLE_INPUT_DIR.rglob(name))
+            found = sorted(root.rglob(name))
             if found:
                 return found[0]
 
     searched = ", ".join(str(candidate) for candidate in DEFAULT_CSV_CANDIDATES)
+    roots = ", ".join(str(root) for root in SEARCH_ROOTS)
     raise SystemExit(
-        "Could not find train.csv. Pass --csv explicitly, or (on Kaggle) add the "
-        "'retail-products-classification' competition as a data source.\n"
-        f"Looked at {searched}, and searched everything under {KAGGLE_INPUT_DIR}."
+        "Could not find train.csv. Pass --csv explicitly, or add the competition data: on "
+        "Kaggle add 'retail-products-classification' as a data source, on Colab run the "
+        "download cell in notebooks/colab_train_retail.ipynb.\n"
+        f"Looked at {searched}, and searched everything under {roots}."
     )
 
 
@@ -109,22 +127,29 @@ def _slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
-def _reset_dataset_dir() -> None:
-    if DATASET_DIR.exists():
-        shutil.rmtree(DATASET_DIR)
+def _reset_dataset_dir(layout: str) -> Path:
+    dataset_dir = DATASET_DIRS[layout]
+    if dataset_dir.exists():
+        shutil.rmtree(dataset_dir)
     for split in ("train", "val"):
-        (DATASET_DIR / "images" / split).mkdir(parents=True, exist_ok=True)
-        (DATASET_DIR / "labels" / split).mkdir(parents=True, exist_ok=True)
+        if layout == "detect":
+            (dataset_dir / "images" / split).mkdir(parents=True, exist_ok=True)
+            (dataset_dir / "labels" / split).mkdir(parents=True, exist_ok=True)
+        else:
+            # Class subdirectories are created as images land in them, so a class that loses
+            # every image to cleaning leaves no empty directory for Ultralytics to read.
+            (dataset_dir / split).mkdir(parents=True, exist_ok=True)
+    return dataset_dir
 
 
-def _write_data_yaml(class_names: list[str]) -> Path:
+def _write_data_yaml(dataset_dir: Path, class_names: list[str]) -> Path:
     data = {
-        "path": str(DATASET_DIR),
+        "path": str(dataset_dir),
         "train": "images/train",
         "val": "images/val",
         "names": dict(enumerate(class_names)),
     }
-    data_yaml_path = DATASET_DIR / "data.yaml"
+    data_yaml_path = dataset_dir / "data.yaml"
     data_yaml_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return data_yaml_path
 
@@ -316,6 +341,14 @@ def _cap_per_class(by_class: dict[str, list[Path]], cap: int, seed: int) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--layout",
+        choices=sorted(DATASET_DIRS),
+        default="classify",
+        help="classify: Ultralytics <split>/<class>/<image> layout, matching this dataset's "
+        "image-level labels. detect: one full-frame box per image, for training a detector "
+        "on labels that have no boxes",
+    )
     parser.add_argument("--csv", type=Path, default=None, help="Path to train.csv (or train.csv.zip); auto-detected if omitted")
     parser.add_argument(
         "--images-dir",
@@ -429,7 +462,7 @@ def main() -> None:
     if missing_files:
         print(f"{missing_files:,} rows skipped: image file not found in {images_dir}")
 
-    _reset_dataset_dir()
+    dataset_dir = _reset_dataset_dir(args.layout)
     class_ids = {name: i for i, name in enumerate(class_names)}
     rng = random.Random(args.seed)
 
@@ -442,20 +475,26 @@ def main() -> None:
         for index, src in enumerate(paths):
             split = "train" if index < split_at else "val"
             dest_name = f"{_slugify(class_name)}_{src.stem}"
-            _write_image(src, DATASET_DIR / "images" / split, dest_name)
-            (DATASET_DIR / "labels" / split / f"{dest_name}.txt").write_text(
-                f"{class_id} {FULL_FRAME_BOX}\n", encoding="utf-8"
-            )
+            if args.layout == "detect":
+                _write_image(src, dataset_dir / "images" / split, dest_name)
+                (dataset_dir / "labels" / split / f"{dest_name}.txt").write_text(
+                    f"{class_id} {FULL_FRAME_BOX}\n", encoding="utf-8"
+                )
+            else:
+                class_dir = dataset_dir / split / class_name
+                class_dir.mkdir(parents=True, exist_ok=True)
+                _write_image(src, class_dir, dest_name)
             if split == "train":
                 total_train += 1
             else:
                 total_val += 1
 
-    data_yaml_path = _write_data_yaml(class_names)
-    (DATASET_DIR / "classes.json").write_text(json.dumps(class_ids, indent=2), encoding="utf-8")
+    data_yaml_path = _write_data_yaml(dataset_dir, class_names) if args.layout == "detect" else None
+    (dataset_dir / "classes.json").write_text(json.dumps(class_ids, indent=2), encoding="utf-8")
 
     counts = sorted((len(paths) for paths in by_class.values()), reverse=True)
     report = {
+        "layout": args.layout,
         "csv": str(csv_path),
         "images_dir": str(images_dir),
         "rows_read": len(rows),
@@ -470,15 +509,17 @@ def main() -> None:
         "largest_class": counts[0] if counts else 0,
         "smallest_class": counts[-1] if counts else 0,
     }
-    (DATASET_DIR / "cleaning_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (dataset_dir / "cleaning_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     print(f"\nDataset ready: {total_train:,} train / {total_val:,} val images across {len(class_names)} classes")
     if counts:
         print(f"Class sizes: largest {counts[0]:,}, median {counts[len(counts) // 2]:,}, smallest {counts[-1]:,}")
         if counts[0] > 20 * counts[-1]:
             print("  Class imbalance is steep - consider --max-per-class to trim the biggest categories.")
-    print(f"data.yaml written to {data_yaml_path}")
-    print(f"cleaning report written to {DATASET_DIR / 'cleaning_report.json'}")
+    print(f"{args.layout} dataset written to {dataset_dir}")
+    if data_yaml_path is not None:
+        print(f"data.yaml written to {data_yaml_path}")
+    print(f"cleaning report written to {dataset_dir / 'cleaning_report.json'}")
 
 
 if __name__ == "__main__":

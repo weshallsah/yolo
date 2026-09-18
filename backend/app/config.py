@@ -15,6 +15,7 @@ class Settings:
         ]
     )
     yolo_weights_path: str = "yolov8n.pt"
+    model_task: str = "detect"
     detection_confidence_threshold: float = 0.2
 
 
@@ -22,6 +23,9 @@ class Settings:
 def get_settings() -> Settings:
     port = int(os.environ.get("APP_PORT", 9000))
     weights_path = os.environ.get("APP_YOLO_WEIGHTS_PATH", "yolov8n.pt")
+    model_task = os.environ.get("APP_MODEL_TASK", "detect").strip().lower()
+    if model_task not in ("detect", "classify"):
+        raise ValueError(f"APP_MODEL_TASK must be 'detect' or 'classify', got {model_task!r}")
     threshold = float(os.environ.get("APP_DETECTION_CONFIDENCE_THRESHOLD", 0.2))
     extra_origin = os.environ.get("APP_CORS_ORIGIN")
 
@@ -35,6 +39,7 @@ def get_settings() -> Settings:
     return Settings(
         port=port,
         yolo_weights_path=weights_path,
+        model_task=model_task,
         detection_confidence_threshold=threshold,
         cors_origins=cors_origins,
     )

@@ -3,16 +3,53 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
+from prepare_retail_dataset import DATASET_DIRS
+
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-DATA_YAML_PATH = BACKEND_DIR / "training_data" / "retail" / "dataset_products" / "data.yaml"
 MODELS_DIR = BACKEND_DIR / "models"
+DEFAULT_WEIGHTS = {"classify": "yolov8n-cls.pt", "detect": "yolov8n.pt"}
+RUN_NAMES = {"classify": "retail_yolo_products_cls", "detect": "retail_yolo_products"}
+# Classifiers train on square crops and gain little from detection's 640px, so each task
+# gets the resolution its head was designed around unless --imgsz overrides it.
+DEFAULT_IMGSZ = {"classify": 224, "detect": 640}
+
+
+def _resolve_data(task: str) -> str:
+    """What Ultralytics trains on: a data.yaml for detect, the dataset root for classify."""
+    dataset_dir = DATASET_DIRS[task]
+    if task == "detect":
+        data_yaml = dataset_dir / "data.yaml"
+        if not data_yaml.exists():
+            raise SystemExit(
+                f"Missing {data_yaml}. Run "
+                "scripts/prepare_retail_dataset.py --layout detect first."
+            )
+        return str(data_yaml)
+
+    if not (dataset_dir / "train").is_dir():
+        raise SystemExit(
+            f"Missing {dataset_dir / 'train'}. Run "
+            "scripts/prepare_retail_dataset.py --layout classify first."
+        )
+    return str(dataset_dir)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--weights", default="yolov8n.pt", help="Base checkpoint to start training from")
+    parser.add_argument(
+        "--task",
+        choices=sorted(DATASET_DIRS),
+        default="classify",
+        help="classify: train yolov8n-cls on this dataset's image-level labels. "
+        "detect: train a detector on the full-frame-box shim",
+    )
+    parser.add_argument(
+        "--weights",
+        default=None,
+        help="Base checkpoint to start training from (default: yolov8n-cls.pt for classify, yolov8n.pt for detect)",
+    )
     parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--imgsz", type=int, default=None, help="Default: 224 for classify, 640 for detect")
     parser.add_argument(
         "--batch",
         type=float,
@@ -28,7 +65,7 @@ def main() -> None:
         help="DataLoader worker processes. Use 0 on environments with restricted shared memory, "
         "where workers>0 can deadlock.",
     )
-    parser.add_argument("--patience", type=int, default=10, help="Stop early once val mAP plateaus for this many epochs")
+    parser.add_argument("--patience", type=int, default=10, help="Stop early once the val metric plateaus for this many epochs")
     parser.add_argument(
         "--cache",
         choices=["ram", "disk", "none"],
@@ -39,31 +76,37 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not DATA_YAML_PATH.exists():
-        raise SystemExit(f"Missing {DATA_YAML_PATH}. Run scripts/prepare_retail_dataset.py first.")
-
+    data = _resolve_data(args.task)
+    weights = args.weights or DEFAULT_WEIGHTS[args.task]
+    imgsz = args.imgsz if args.imgsz is not None else DEFAULT_IMGSZ[args.task]
     cache = {"ram": True, "disk": "disk", "none": False}[args.cache]
     batch = int(args.batch) if args.batch >= 1 else args.batch
 
-    model = YOLO(args.weights)
+    model = YOLO(weights)
     model.train(
-        data=str(DATA_YAML_PATH),
+        data=data,
         epochs=args.epochs,
-        imgsz=args.imgsz,
+        imgsz=imgsz,
         batch=batch,
         device=args.device,
         workers=args.workers,
         patience=args.patience,
         cache=cache,
         project=str(MODELS_DIR),
-        name="retail_yolo_products",
+        name=RUN_NAMES[args.task],
         exist_ok=True,
     )
 
-    print(
-        "\nDone. Check the validation metrics above, then point APP_YOLO_WEIGHTS_PATH at "
-        f"{MODELS_DIR / 'retail_yolo_products' / 'weights' / 'best.pt'} to start serving it."
-    )
+    best = MODELS_DIR / RUN_NAMES[args.task] / "weights" / "best.pt"
+    metric = "top-1/top-5 accuracy" if args.task == "classify" else "mAP"
+    print(f"\nDone. Check the validation {metric} above; best weights are at {best}.")
+    if args.task == "classify":
+        print(
+            "This is a classifier, so the detection API in app/detection/yolo_detector.py "
+            "cannot serve it. Point APP_YOLO_WEIGHTS_PATH at it and set APP_MODEL_TASK=classify."
+        )
+    else:
+        print("Point APP_YOLO_WEIGHTS_PATH at it to start serving it.")
 
 
 if __name__ == "__main__":
