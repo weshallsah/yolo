@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import random
 import re
 import shutil
@@ -38,6 +39,8 @@ DATASET_DIRS = {
 }
 FULL_FRAME_BOX = "0.5 0.5 0.98 0.98"
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+# Noise that turns up in unpacked archives and notebook working directories.
+SKIP_DIR_NAMES = {"__MACOSX", ".git", ".ipynb_checkpoints", "__pycache__"}
 # train.csv headers vary between releases of this dataset, so the columns are matched by
 # alias rather than by an exact name that a re-upload can quietly change.
 IMAGE_ID_ALIASES = ("imgid", "image_id", "imageid", "image", "id", "filename")
@@ -70,35 +73,90 @@ def _find_default_csv() -> Path:
     )
 
 
-def _holds_images(directory: Path) -> bool:
-    """True if the directory directly contains at least one image file."""
-    try:
-        return any(
-            entry.suffix.lower() in IMAGE_EXTENSIONS and entry.is_file()
-            for entry in directory.iterdir()
-        )
-    except OSError:
-        return False
+def _is_training_path(path: Path) -> bool:
+    return any(part.lower().startswith("train") for part in path.parts)
 
 
-def _find_default_images_dir(csv_path: Path) -> Path:
-    """Finds the product images belonging to train.csv, looking beside the csv itself.
+def _index_images(root: Path) -> dict[str, Path]:
+    """Maps every image under root to its filename stem, at any depth.
 
-    Resolved relative to the csv for the same reason _find_default_csv searches rather
-    than hardcodes: the competition's mount point is not known ahead of time.
+    Where the images sit relative to train.csv is not knowable ahead of time: the Kaggle
+    mount nests them (train/train/..., or sharded into per-prefix subdirectories), the Colab
+    unzip flattens them beside the csv. One recursive walk replaces guessing at the layout,
+    and it turns the per-row lookup into a dict hit instead of a glob per image.
     """
-    root = csv_path.parent
-    candidates = [root / "train", root / "images", root / "train_images", root]
-    if root.is_dir():
-        candidates += [entry for entry in sorted(root.iterdir()) if entry.is_dir()]
+    index: dict[str, Path] = {}
+    for current, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in SKIP_DIR_NAMES]
+        directory = Path(current)
+        for filename in filenames:
+            stem, extension = os.path.splitext(filename)
+            if extension.lower() not in IMAGE_EXTENSIONS:
+                continue
+            path = directory / filename
+            previous = index.get(stem)
+            # Competition mounts ship test images alongside the training ones. When the same
+            # stem appears in both, the copy under a train/ directory is the one train.csv
+            # is talking about.
+            if previous is None or (_is_training_path(path) and not _is_training_path(previous)):
+                index[stem] = path
+    return index
 
-    for candidate in candidates:
-        if candidate.is_dir() and _holds_images(candidate):
-            return candidate
 
+def _describe_tree(root: Path, max_lines: int = 40) -> str:
+    """Prints what is actually mounted, so a layout surprise is visible instead of guessed at."""
+    lines: list[str] = []
+    for current, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(name for name in dirnames if name not in SKIP_DIR_NAMES)
+        lines.append(f"  {current}  ({len(filenames)} files)")
+        for name in sorted(filenames)[:4]:
+            lines.append(f"      {name}")
+        if len(lines) >= max_lines:
+            lines.append("  ... (truncated)")
+            break
+    return "\n".join(lines) or f"  {root} is empty"
+
+
+def _find_images(csv_path: Path, images_dir: Path | None) -> tuple[Path, dict[str, Path]]:
+    """Finds the product images and indexes them by stem.
+
+    Resolved by searching rather than by a fixed path for the same reason _find_default_csv
+    searches: the competition's mount point and its internal layout are both unknown here.
+    """
+    if images_dir is not None:
+        if not images_dir.is_dir():
+            raise SystemExit(f"--images-dir {images_dir} is not a directory")
+        index = _index_images(images_dir)
+        if not index:
+            raise SystemExit(
+                f"No images found anywhere under --images-dir {images_dir}. Looked for "
+                f"{', '.join(IMAGE_EXTENSIONS)} files at any depth.\n{_describe_tree(images_dir)}"
+            )
+        return images_dir, index
+
+    # The csv's own directory first - the competition mount keeps labels and images together -
+    # then the wider roots, in case the images arrived as a separate data source.
+    roots = [csv_path.parent] + [root for root in SEARCH_ROOTS if root != csv_path.parent]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        index = _index_images(root)
+        if index:
+            return root, index
+
+    archives = sorted(csv_path.parent.rglob("*.zip"))[:5]
+    hint = (
+        "\nThe only archives here are still zipped - unzip them into a writable directory "
+        f"and pass --images-dir:\n  {chr(10).join('  ' + str(a) for a in archives)}"
+        if archives
+        else ""
+    )
     raise SystemExit(
-        f"Found {csv_path} but no directory of images beside it. "
-        "Pass --images-dir to point at wherever the images actually live."
+        f"Found {csv_path} but no image files anywhere beneath "
+        f"{', '.join(str(root) for root in roots)}.\n"
+        "On Kaggle the competition's images may be published as a separate data source: add "
+        "it under Input, then pass --images-dir. Otherwise point --images-dir at wherever "
+        f"the images actually live.\nWhat is mounted:\n{_describe_tree(csv_path.parent)}{hint}"
     )
 
 
@@ -114,13 +172,11 @@ def _read_rows(csv_path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
-def _resolve_image(images_dir: Path, image_id: str) -> Path | None:
-    for extension in IMAGE_EXTENSIONS:
-        candidate = images_dir / f"{image_id}{extension}"
-        if candidate.exists():
-            return candidate
-    matches = list(images_dir.glob(f"{image_id}.*"))
-    return matches[0] if matches else None
+def _resolve_image(index: dict[str, Path], image_id: str) -> Path | None:
+    """Looks an id up in the image index, tolerating ids that carry their own extension."""
+    if image_id in index:
+        return index[image_id]
+    return index.get(Path(image_id).stem)
 
 
 def _slugify(name: str) -> str:
@@ -354,8 +410,7 @@ def main() -> None:
         "--images-dir",
         type=Path,
         default=None,
-        help="Directory containing the product images, named <ImgId>.<ext>; "
-        "auto-detected beside train.csv if omitted",
+        help="Directory containing the product images, named <ImgId>.<ext>. Searched recursively, so a nested or sharded layout is fine; auto-detected from train.csv if omitted",
     )
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument(
@@ -402,15 +457,9 @@ def main() -> None:
     rows = _read_rows(csv_path)
     print(f"  {len(rows):,} rows")
 
-    images_dir = args.images_dir or _find_default_images_dir(csv_path)
+    images_dir, image_index = _find_images(csv_path, args.images_dir)
     print(f"Reading images from {images_dir}")
-
-    if not images_dir.exists():
-        raise SystemExit(
-            f"Missing images directory {images_dir}. On Kaggle, add the "
-            "'retail-products-classification' competition as a data source to this notebook, "
-            "or pass --images-dir to point at wherever the images actually live."
-        )
+    print(f"  {len(image_index):,} image files found (searched every subdirectory)")
 
     print("\nCleaning labels...")
     labelled, label_report = _clean_labels(rows)
@@ -419,11 +468,25 @@ def main() -> None:
     resolved: list[tuple[Path, str]] = []
     missing_files = 0
     for image_id, class_name in labelled:
-        image_path = _resolve_image(images_dir, image_id)
+        image_path = _resolve_image(image_index, image_id)
         if image_path is None:
             missing_files += 1
             continue
         resolved.append((image_path, class_name))
+
+    if not resolved:
+        # Images exist but none of them answer to an id from the csv, so the two name things
+        # differently. Show both sides rather than going on to build an empty dataset.
+        sample_ids = [image_id for image_id, _ in labelled[:5]]
+        sample_files = [path.name for path in list(image_index.values())[:5]]
+        raise SystemExit(
+            f"None of the {len(labelled):,} labelled ids matched any of the "
+            f"{len(image_index):,} images under {images_dir}.\n"
+            f"  ids in {csv_path.name}: {sample_ids}\n"
+            f"  filenames on disk:      {sample_files}\n"
+            "The csv's image column is probably not the filename - check which column "
+            "holds it, or point --images-dir at the matching set of images."
+        )
 
     resolved, image_report = _inspect_images(
         resolved,
