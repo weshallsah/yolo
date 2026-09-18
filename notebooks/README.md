@@ -32,8 +32,14 @@ To open the notebook: push it, then visit
   Notebook access enabled), or drop `kaggle.json` in Drive at `MyDrive/kaggle/kaggle.json`.
   Secrets are preferred: they outlive the runtime and keep the key out of Drive.
 - **Accept the competition rules** at
-  <https://www.kaggle.com/c/retail-products-classification/rules>. The API returns 403 until
-  you do, and that is by far the most common reason the download cell fails.
+  <https://www.kaggle.com/c/retail-products-classification/rules>. Competition downloads
+  answer **401**, not 403, until you do — which reads like a rejected key and is the most
+  common reason the download cell fails. Cell 6 probes a public endpoint first so it can tell
+  you which of the two it actually is.
+
+  This is an InClass competition. If the rules page offers no accept button, or the Data tab
+  is unreachable in a browser, it is closed or limited to enrolled students and no token will
+  open it. Use `--csv` and `--images-dir` to point the pipeline at another source.
 
 ## What gets trained
 
