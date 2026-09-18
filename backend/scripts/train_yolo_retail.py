@@ -34,6 +34,27 @@ def _resolve_data(task: str) -> str:
     return str(dataset_dir)
 
 
+def _resolve_device(requested: str | None) -> str | None:
+    """Defaults to every visible GPU, which is not what Ultralytics does on its own.
+
+    Left to itself Ultralytics picks a single device, so on Kaggle's T4 x2 the second card
+    sits idle. Passing "0,1" is what turns on its DDP path. An explicit --device always
+    wins, including "0" to deliberately go back to one card.
+    """
+    if requested is not None:
+        return requested
+    try:
+        import torch
+
+        count = torch.cuda.device_count()
+    except Exception:
+        return None
+    if count > 1:
+        print(f"Found {count} GPUs - training on all of them (DDP). Pass --device 0 for one.")
+        return ",".join(str(index) for index in range(count))
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -57,7 +78,11 @@ def main() -> None:
         help="Fixed batch size (integer >= 1), a fraction between 0 and 1 to set AutoBatch's "
         "target GPU-memory utilization (e.g. 0.85 for ~85%%), or -1 for AutoBatch's default ~60%% target",
     )
-    parser.add_argument("--device", default=None, help="e.g. 0 for first GPU, cpu for CPU (default: auto)")
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="e.g. 0 for the first GPU, '0,1' for both, cpu for CPU. Default: every GPU found",
+    )
     parser.add_argument(
         "--workers",
         type=int,
@@ -82,13 +107,35 @@ def main() -> None:
     cache = {"ram": True, "disk": "disk", "none": False}[args.cache]
     batch = int(args.batch) if args.batch >= 1 else args.batch
 
+    device = _resolve_device(args.device)
+    multi_gpu = isinstance(device, str) and "," in device
+    if multi_gpu:
+        # AutoBatch probes memory on a single device, so it has no meaning once the batch is
+        # being split across several. Stop here rather than let Ultralytics resolve it to
+        # something unannounced halfway into a long run.
+        if batch < 1:
+            raise SystemExit(
+                f"--batch {args.batch} asks for AutoBatch, which does not work across "
+                f"{device.count(',') + 1} GPUs. Pass a fixed batch size, or --device 0 to "
+                "train on one card with AutoBatch."
+            )
+        # Ultralytics treats batch as the total across devices, so per-GPU batch is what
+        # actually has to fit in memory - worth printing, since it is the usual surprise.
+        devices = device.count(",") + 1
+        print(f"batch {batch} total = {batch // devices} per GPU across {devices} GPUs")
+        if cache is True:
+            print(
+                "  note: --cache ram caches the dataset once per GPU process, so it needs "
+                "roughly twice the RAM here. Use --cache disk if it falls back or OOMs."
+            )
+
     model = YOLO(weights)
     model.train(
         data=data,
         epochs=args.epochs,
         imgsz=imgsz,
         batch=batch,
-        device=args.device,
+        device=device,
         workers=args.workers,
         patience=args.patience,
         cache=cache,
