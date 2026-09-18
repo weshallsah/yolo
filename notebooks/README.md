@@ -27,8 +27,10 @@ To open the notebook: push it, then visit
 
 ## One-time setup
 
-- **Kaggle token** — kaggle.com → Settings → API → Create New Token, then put `kaggle.json`
-  in Drive at `MyDrive/kaggle/kaggle.json`. Every future runtime picks it up automatically.
+- **Kaggle token** — kaggle.com → Settings → API → Create New Token. Then either add
+  `KAGGLE_USERNAME` and `KAGGLE_KEY` as **Colab Secrets** (key icon in the sidebar, with
+  Notebook access enabled), or drop `kaggle.json` in Drive at `MyDrive/kaggle/kaggle.json`.
+  Secrets are preferred: they outlive the runtime and keep the key out of Drive.
 - **Accept the competition rules** at
   <https://www.kaggle.com/c/retail-products-classification/rules>. The API returns 403 until
   you do, and that is by far the most common reason the download cell fails.
