@@ -41,17 +41,22 @@ def _resolve_device(requested: str | None) -> str | None:
     sits idle. Passing "0,1" is what turns on its DDP path. An explicit --device always
     wins, including "0" to deliberately go back to one card.
     """
-    if requested is not None:
-        return requested
     try:
         import torch
 
         count = torch.cuda.device_count()
-    except Exception:
-        return None
+    except Exception as exc:
+        count = 0
+        print(f"Could not count GPUs ({type(exc).__name__}) - leaving the choice to Ultralytics")
+
+    if requested is not None:
+        print(f"device: {requested} (explicit --device; {count} GPUs visible)")
+        return requested
     if count > 1:
-        print(f"Found {count} GPUs - training on all of them (DDP). Pass --device 0 for one.")
-        return ",".join(str(index) for index in range(count))
+        device = ",".join(str(index) for index in range(count))
+        print(f"device: {device} - training on all {count} GPUs (DDP). Pass --device 0 for one.")
+        return device
+    print(f"device: auto - {count} GPU(s) visible, so Ultralytics picks for itself")
     return None
 
 
